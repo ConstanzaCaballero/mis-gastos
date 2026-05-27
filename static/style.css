@@ -33,12 +33,14 @@ body {
   position: fixed;
   top: 0; left: 0; right: 0;
   z-index: 200;
-  height: var(--header-h);
-  padding: 0 16px;
-  padding-top: env(safe-area-inset-top, 0);
+  /* height grows to absorb the notch / Dynamic Island */
+  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  padding: 0 16px env(safe-area-inset-top, 0px);
+  padding-top: env(safe-area-inset-top, 0px);
   background: var(--primary);
   display: flex;
-  align-items: center;
+  align-items: flex-end;     /* content sits at the bottom of the taller header */
+  padding-bottom: 10px;
   justify-content: space-between;
   gap: 12px;
 }
@@ -97,8 +99,8 @@ body {
 /* ── Main / tab panels ───────────────────────────────────── */
 .app-main {
   position: fixed;
-  top: var(--header-h);
-  bottom: var(--nav-h);
+  top: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
   left: 0; right: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -318,6 +320,24 @@ input:focus { outline: none; border-color: var(--primary); }
   line-height: 1;
 }
 .del-btn:hover { color: var(--danger); background: #fee2e2; }
+
+/* ── Logout button (always visible in summary tab) ──────── */
+.logout-full-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 13px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: var(--surface);
+  margin-bottom: 14px;
+  transition: background .15s, color .15s;
+}
+.logout-full-btn:active { background: #FEE2E2; color: var(--danger); border-color: #FECACA; }
 
 /* ── Bottom nav ─────────────────────────────────────────── */
 .bottom-nav {
