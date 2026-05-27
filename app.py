@@ -1,25 +1,68 @@
+import functools
 import os
+import secrets
 from contextlib import contextmanager
 from datetime import datetime
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from flask import Flask, jsonify, render_template, request
+from flask import (
+    Flask, jsonify, redirect, render_template,
+    request, session, url_for,
+)
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 _DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if _DATABASE_URL.startswith("postgres://"):
     _DATABASE_URL = _DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+_USERNAME = os.environ.get("USERNAME", "admin")
+_PASSWORD = os.environ.get("PASSWORD", "password")
+
 CATEGORIES = [
     "supermercado", "restaurantes", "alquiler", "transporte",
     "viajes", "ropa_compras", "salud_gym", "fertilidad",
-    "hogar", "envios", "ocio", "suscripciones",
-    "claude", "adopta_abuelo", "comunidad_stro", "temu",
+    "envios", "ocio", "suscripciones",
+    "claude", "adopta_abuelo", "comunidad_stro", "temu", "otros",
 ]
 
 
+# ── Auth ─────────────────────────────────────────────────────
+def login_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "No autenticado"}), 401
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        ok = secrets.compare_digest(username, _USERNAME) and \
+             secrets.compare_digest(password, _PASSWORD)
+        if ok:
+            session["logged_in"] = True
+            return redirect(url_for("index"))
+        error = "Usuario o contraseña incorrectos"
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ── DB ───────────────────────────────────────────────────────
 @contextmanager
 def get_db():
     conn = psycopg2.connect(_DATABASE_URL, cursor_factory=RealDictCursor)
@@ -50,12 +93,15 @@ def init_db():
             )
 
 
+# ── Routes ───────────────────────────────────────────────────
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html")
 
 
 @app.route("/api/expenses", methods=["GET"])
+@login_required
 def list_expenses():
     month = request.args.get("month") or datetime.today().strftime("%Y-%m")
     with get_db() as conn:
@@ -75,6 +121,7 @@ def list_expenses():
 
 
 @app.route("/api/expenses", methods=["POST"])
+@login_required
 def add_expense():
     data = request.get_json(silent=True) or {}
     try:
@@ -106,6 +153,7 @@ def add_expense():
 
 
 @app.route("/api/expenses/<int:expense_id>", methods=["DELETE"])
+@login_required
 def delete_expense(expense_id):
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -114,6 +162,7 @@ def delete_expense(expense_id):
 
 
 @app.route("/api/summary")
+@login_required
 def summary():
     month = request.args.get("month") or datetime.today().strftime("%Y-%m")
     with get_db() as conn:

@@ -10,7 +10,6 @@ const CATS = [
   { id: 'ropa_compras',   icon: '🛍️', label: 'Ropa / Compras',    short: 'Ropa',       color: '#db2777' },
   { id: 'salud_gym',      icon: '💪', label: 'Salud / Gym',        short: 'Salud',      color: '#65a30d' },
   { id: 'fertilidad',     icon: '🧬', label: 'Fertilidad',         short: 'Fertilidad', color: '#9333ea' },
-  { id: 'hogar',          icon: '🏠', label: 'Hogar',              short: 'Hogar',      color: '#475569' },
   { id: 'envios',         icon: '📦', label: 'Envíos',             short: 'Envíos',     color: '#92400e' },
   { id: 'ocio',           icon: '🎮', label: 'Ocio',               short: 'Ocio',       color: '#dc2626' },
   { id: 'suscripciones',  icon: '📺', label: 'Suscripciones',      short: 'Suscripc.',  color: '#4338ca' },
@@ -18,6 +17,7 @@ const CATS = [
   { id: 'adopta_abuelo',  icon: '👴', label: 'Adopta un abuelo',   short: 'A. Abuelo',  color: '#c2410c' },
   { id: 'comunidad_stro', icon: '🏘️', label: 'Comunidad Stro',    short: 'Stro',       color: '#0d9488' },
   { id: 'temu',           icon: '🛍️', label: 'TEMU',              short: 'TEMU',       color: '#f97316' },
+  { id: 'otros',          icon: '🗂️', label: 'Otros',             short: 'Otros',      color: '#6b7280' },
 ];
 const CAT_MAP = Object.fromEntries(CATS.map(c => [c.id, c]));
 
@@ -106,6 +106,7 @@ async function loadAll() {
 async function loadSummary() {
   try {
     const res  = await fetch(`/api/summary?month=${currentMonth}`);
+    if (res.status === 401) { location.href = '/login'; return; }
     const data = await res.json();
     heroAmount.textContent = fmt(data.total);
     renderBars(data.by_category, data.total);
@@ -141,6 +142,7 @@ function renderBars(rows, grandTotal) {
 async function loadExpenses() {
   try {
     const res  = await fetch(`/api/expenses?month=${currentMonth}`);
+    if (res.status === 401) { location.href = '/login'; return; }
     const data = await res.json();
     renderExpenses(data);
   } catch {

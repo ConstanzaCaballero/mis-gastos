@@ -8,4 +8,10 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.0"
       - key: DATABASE_URL
-        sync: false   # Set this manually in Render dashboard → Environment
+        sync: false   # Supabase connection string
+      - key: SECRET_KEY
+        sync: false   # Random secret for Flask sessions (e.g. openssl rand -hex 32)
+      - key: USERNAME
+        sync: false   # Login username
+      - key: PASSWORD
+        sync: false   # Login password

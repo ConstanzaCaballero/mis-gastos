@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#7C3AED" />
+  <title>Mis Gastos — Acceder</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #7C3AED;
+      --primary-dark: #6D28D9;
+      --bg: #F5F3FF;
+      --surface: #fff;
+      --text: #1E1B4B;
+      --muted: #6B7280;
+      --border: #E5E7EB;
+      --danger: #EF4444;
+      --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      background: var(--surface);
+      border-radius: 20px;
+      padding: 36px 28px 32px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 4px 32px rgba(124,58,237,.13);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 8px;
+      font-size: 2.8rem;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: .85rem;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+    .field { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 1rem;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-appearance: none;
+      transition: border-color .15s;
+    }
+    input:focus { outline: none; border-color: var(--primary); }
+    .error {
+      background: #FEE2E2;
+      color: var(--danger);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: .85rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    button[type="submit"] {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: background .15s, transform .1s;
+      letter-spacing: .02em;
+    }
+    button[type="submit"]:active { transform: scale(.97); background: var(--primary-dark); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">💸</div>
+    <h1>Mis Gastos</h1>
+    <p class="subtitle">Introduce tus credenciales para continuar</p>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/login" autocomplete="on">
+      <div class="field">
+        <label for="username">Usuario</label>
+        <input type="text" id="username" name="username"
+          autocomplete="username" required autofocus />
+      </div>
+      <div class="field">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" name="password"
+          autocomplete="current-password" required />
+      </div>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>
