@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#7C3AED" />
+  <meta name="description" content="Registra tus gastos diarios desde el móvil" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Gastos" />
+  <title>Mis Gastos</title>
+  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────── -->
+<header class="app-header">
+  <div class="header-left">
+    <span class="app-logo">💸</span>
+    <span class="app-title">Mis Gastos</span>
+  </div>
+  <div class="month-nav">
+    <button class="month-btn" id="prev-month">&#8249;</button>
+    <span class="month-label" id="month-label"></span>
+    <button class="month-btn" id="next-month">&#8250;</button>
+  </div>
+  <button class="install-chip" id="install-btn" hidden>
+    Instalar&nbsp;↓
+  </button>
+</header>
+
+<!-- ── Main content ────────────────────────── -->
+<main class="app-main">
+
+  <!-- TAB: Resumen -->
+  <section class="tab-panel active" id="tab-summary">
+    <div class="summary-hero">
+      <div class="hero-label">Total del mes</div>
+      <div class="hero-amount" id="hero-amount">€0,00</div>
+    </div>
+    <div class="card" id="summary-card">
+      <div class="card-title">Por categoría</div>
+      <div id="cat-bars" class="cat-bars"></div>
+      <div class="empty-hint" id="summary-empty">Aún no hay gastos este mes.</div>
+    </div>
+  </section>
+
+  <!-- TAB: Añadir -->
+  <section class="tab-panel" id="tab-add">
+    <form id="expense-form" novalidate>
+
+      <div class="form-block">
+        <label class="form-label">Categoría</label>
+        <div class="cat-grid" id="cat-grid"></div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-block">
+          <label class="form-label" for="inp-amount">Importe</label>
+          <div class="amount-wrap">
+            <span class="currency">€</span>
+            <input id="inp-amount" type="number" min="0.01" step="0.01"
+              placeholder="0,00" inputmode="decimal" required autocomplete="off" />
+          </div>
+        </div>
+        <div class="form-block">
+          <label class="form-label" for="inp-date">Fecha</label>
+          <input id="inp-date" type="date" required />
+        </div>
+      </div>
+
+      <div class="form-block">
+        <label class="form-label" for="inp-note">
+          Nota <span class="optional">(opcional)</span>
+        </label>
+        <input id="inp-note" type="text" placeholder="¿En qué gastaste?" maxlength="200"
+          autocomplete="off" />
+      </div>
+
+      <button type="submit" class="btn-primary" id="submit-btn">
+        Añadir gasto
+      </button>
+    </form>
+  </section>
+
+  <!-- TAB: Gastos -->
+  <section class="tab-panel" id="tab-history">
+    <div class="card">
+      <div id="expense-list" class="expense-list">
+        <div class="empty-hint" id="list-empty">Aún no hay gastos este mes.</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Bottom nav ──────────────────────────── -->
+<nav class="bottom-nav">
+  <button class="nav-item active" data-tab="summary">
+    <span class="nav-icon">📊</span>
+    <span class="nav-lbl">Resumen</span>
+  </button>
+  <button class="nav-item" data-tab="add">
+    <span class="nav-icon add-icon">＋</span>
+    <span class="nav-lbl">Añadir</span>
+  </button>
+  <button class="nav-item" data-tab="history">
+    <span class="nav-icon">📋</span>
+    <span class="nav-lbl">Gastos</span>
+  </button>
+</nav>
+
+<!-- ── Toast ───────────────────────────────── -->
+<div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
