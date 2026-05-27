@@ -18,8 +18,12 @@ _DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if _DATABASE_URL.startswith("postgres://"):
     _DATABASE_URL = _DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-_USERNAME = os.environ.get("USERNAME", "admin")
-_PASSWORD = os.environ.get("PASSWORD", "password")
+# Passwords loaded from env vars — usernames are fixed
+USERS = {
+    "admin":     os.environ.get("PASSWORD_ADMIN", ""),
+    "Maximo":    os.environ.get("PASSWORD_MAXIMO", ""),
+    "Guillermo": os.environ.get("PASSWORD_GUILLERMO", ""),
+}
 
 CATEGORIES = [
     "supermercado", "restaurantes", "alquiler", "transporte",
@@ -29,11 +33,15 @@ CATEGORIES = [
 ]
 
 
-# ── Auth ─────────────────────────────────────────────────────
+# ── Auth helpers ─────────────────────────────────────────────
+def current_user():
+    return session.get("username")
+
+
 def login_required(f):
     @functools.wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not session.get("username"):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "No autenticado"}), 401
             return redirect(url_for("login"))
@@ -41,16 +49,16 @@ def login_required(f):
     return decorated
 
 
+# ── Auth routes ──────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
     if request.method == "POST":
         username = request.form.get("username", "")
         password = request.form.get("password", "")
-        ok = secrets.compare_digest(username, _USERNAME) and \
-             secrets.compare_digest(password, _PASSWORD)
-        if ok:
-            session["logged_in"] = True
+        stored   = USERS.get(username, "")
+        if stored and secrets.compare_digest(password, stored):
+            session["username"] = username
             return redirect(url_for("index"))
         error = "Usuario o contraseña incorrectos"
     return render_template("login.html", error=error)
@@ -83,6 +91,7 @@ def init_db():
                 """
                 CREATE TABLE IF NOT EXISTS expenses (
                     id         SERIAL PRIMARY KEY,
+                    username   TEXT NOT NULL,
                     amount     NUMERIC(10,2) NOT NULL,
                     category   TEXT NOT NULL,
                     note       TEXT,
@@ -91,13 +100,20 @@ def init_db():
                 )
                 """
             )
+            # Migration: add username column to pre-existing tables
+            cur.execute(
+                """
+                ALTER TABLE expenses
+                ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT 'admin'
+                """
+            )
 
 
-# ── Routes ───────────────────────────────────────────────────
+# ── App routes ───────────────────────────────────────────────
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", username=current_user())
 
 
 @app.route("/api/expenses", methods=["GET"])
@@ -111,10 +127,11 @@ def list_expenses():
                 SELECT id, amount::float, category, note,
                        TO_CHAR(date, 'YYYY-MM-DD') AS date
                 FROM expenses
-                WHERE TO_CHAR(date, 'YYYY-MM') = %s
+                WHERE username = %s
+                  AND TO_CHAR(date, 'YYYY-MM') = %s
                 ORDER BY date DESC, id DESC
                 """,
-                (month,),
+                (current_user(), month),
             )
             rows = cur.fetchall()
     return jsonify([dict(r) for r in rows])
@@ -141,12 +158,12 @@ def add_expense():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO expenses (amount, category, note, date)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO expenses (username, amount, category, note, date)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id, amount::float, category, note,
                           TO_CHAR(date, 'YYYY-MM-DD') AS date
                 """,
-                (amount, category, note or None, date),
+                (current_user(), amount, category, note or None, date),
             )
             row = cur.fetchone()
     return jsonify(dict(row)), 201
@@ -157,7 +174,11 @@ def add_expense():
 def delete_expense(expense_id):
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
+            # username check prevents deleting another user's expense
+            cur.execute(
+                "DELETE FROM expenses WHERE id = %s AND username = %s",
+                (expense_id, current_user()),
+            )
     return jsonify({"deleted": expense_id})
 
 
@@ -171,17 +192,22 @@ def summary():
                 """
                 SELECT category, SUM(amount)::float AS total
                 FROM expenses
-                WHERE TO_CHAR(date, 'YYYY-MM') = %s
+                WHERE username = %s
+                  AND TO_CHAR(date, 'YYYY-MM') = %s
                 GROUP BY category
                 ORDER BY total DESC
                 """,
-                (month,),
+                (current_user(), month),
             )
             by_cat = cur.fetchall()
             cur.execute(
-                "SELECT COALESCE(SUM(amount), 0)::float AS total FROM expenses "
-                "WHERE TO_CHAR(date, 'YYYY-MM') = %s",
-                (month,),
+                """
+                SELECT COALESCE(SUM(amount), 0)::float AS total
+                FROM expenses
+                WHERE username = %s
+                  AND TO_CHAR(date, 'YYYY-MM') = %s
+                """,
+                (current_user(), month),
             )
             grand = cur.fetchone()
     return jsonify(

@@ -63,8 +63,8 @@
       color: var(--muted);
       margin-bottom: 6px;
     }
-    input[type="text"],
-    input[type="password"] {
+    input[type="password"],
+    select {
       width: 100%;
       border: 1.5px solid var(--border);
       border-radius: 10px;
@@ -75,7 +75,32 @@
       -webkit-appearance: none;
       transition: border-color .15s;
     }
-    input:focus { outline: none; border-color: var(--primary); }
+    input:focus, select:focus { outline: none; border-color: var(--primary); }
+    .user-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .user-btn {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      padding: 10px 4px;
+      cursor: pointer;
+      text-align: center;
+      font-family: var(--font);
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--muted);
+      transition: all .13s;
+    }
+    .user-btn .avatar { font-size: 1.5rem; display: block; margin-bottom: 3px; }
+    .user-btn.active {
+      border-color: var(--primary);
+      background: #EDE9FE;
+      color: var(--primary);
+    }
+    .user-btn:active { transform: scale(.95); }
     .error {
       background: #FEE2E2;
       color: var(--danger);
@@ -113,19 +138,39 @@
     <div class="error">{{ error }}</div>
     {% endif %}
 
-    <form method="POST" action="/login" autocomplete="on">
+    <form method="POST" action="/login" autocomplete="on" id="login-form">
       <div class="field">
-        <label for="username">Usuario</label>
-        <input type="text" id="username" name="username"
-          autocomplete="username" required autofocus />
+        <label>¿Quién eres?</label>
+        <div class="user-grid">
+          <button type="button" class="user-btn active" data-user="admin">
+            <span class="avatar">👩‍💼</span>Admin
+          </button>
+          <button type="button" class="user-btn" data-user="Maximo">
+            <span class="avatar">👦</span>Maximo
+          </button>
+          <button type="button" class="user-btn" data-user="Guillermo">
+            <span class="avatar">👨</span>Guillermo
+          </button>
+        </div>
+        <input type="hidden" id="username" name="username" value="admin" />
       </div>
       <div class="field">
         <label for="password">Contraseña</label>
         <input type="password" id="password" name="password"
-          autocomplete="current-password" required />
+          autocomplete="current-password" required autofocus />
       </div>
       <button type="submit">Entrar</button>
     </form>
+    <script>
+      document.querySelectorAll('.user-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById('username').value = btn.dataset.user;
+          document.getElementById('password').focus();
+        });
+      });
+    </script>
   </div>
 </body>
 </html>

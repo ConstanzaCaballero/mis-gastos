@@ -10,8 +10,10 @@ services:
       - key: DATABASE_URL
         sync: false   # Supabase connection string
       - key: SECRET_KEY
-        sync: false   # Random secret for Flask sessions (e.g. openssl rand -hex 32)
-      - key: USERNAME
-        sync: false   # Login username
-      - key: PASSWORD
-        sync: false   # Login password
+        sync: false   # Random secret for Flask sessions
+      - key: PASSWORD_ADMIN
+        sync: false   # Password for user "admin"
+      - key: PASSWORD_MAXIMO
+        sync: false   # Password for user "Maximo"
+      - key: PASSWORD_GUILLERMO
+        sync: false   # Password for user "Guillermo"
