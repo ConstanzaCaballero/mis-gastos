@@ -21,9 +21,19 @@ const CATS = [
 ];
 const CAT_MAP = Object.fromEntries(CATS.map(c => [c.id, c]));
 
+/* ── User metadata (for compare tab) ───────────────────── */
+const USER_META = {
+  'admin':     { icon: '👩‍💼', color: '#7C3AED', label: 'Admin' },
+  'Maximo':    { icon: '👦',   color: '#2563eb', label: 'Maximo' },
+  'Guillermo': { icon: '👨',   color: '#16a34a', label: 'Guillermo' },
+};
+
 /* ── State ─────────────────────────────────────────────── */
-let currentMonth = todayYM();
-let selectedCat  = CATS[0].id;
+let currentMonth  = todayYM();
+let selectedCat   = CATS[0].id;
+let compareUser1  = window.CURRENT_USER;
+let compareUser2  = Object.keys(USER_META).find(u => u !== compareUser1) || Object.keys(USER_META)[1];
+let compareMode   = 'category';
 
 /* ── DOM refs ──────────────────────────────────────────── */
 const monthLabel  = document.getElementById('month-label');
@@ -45,6 +55,7 @@ const installBtn  = document.getElementById('install-btn');
 inpDate.value = todayISO();
 buildCatGrid();
 buildEvolutionSelect();
+buildCompareUI();
 updateMonthLabel();
 loadAll();
 
@@ -60,6 +71,9 @@ function shiftMonth(delta) {
   loadAll();
   if (document.getElementById('tab-charts').classList.contains('active')) {
     loadPieChart();
+  }
+  if (document.getElementById('tab-compare').classList.contains('active') && compareMode === 'category') {
+    loadCompare();
   }
 }
 
@@ -79,7 +93,8 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.getElementById('tab-' + id).classList.add('active');
     btn.classList.add('active');
     document.querySelector('.app-main').scrollTop = 0;
-    if (id === 'charts') loadCharts();
+    if (id === 'charts')  loadCharts();
+    if (id === 'compare') loadCompare();
   });
 });
 
@@ -456,4 +471,164 @@ function fmtMonthShort(ym) {
   const [y, m] = ym.split('-').map(Number);
   const s = new Date(y, m - 1, 1).toLocaleDateString('es-ES', { month: 'short' });
   return s.charAt(0).toUpperCase() + s.slice(1, 3);
+}
+
+/* ── Compare tab ─────────────────────────────────────────── */
+let chartCompare = null;
+
+function buildCompareUI() {
+  ['picker1', 'picker2'].forEach((pickerId, slot) => {
+    const picker = document.getElementById(pickerId);
+    picker.innerHTML = Object.entries(USER_META).map(([uname, meta]) => `
+      <button class="cmp-btn" data-user="${uname}" style="--cmp-color:${meta.color}">
+        <span class="cmp-icon">${meta.icon}</span>
+        <span class="cmp-name">${meta.label}</span>
+      </button>`).join('');
+
+    picker.addEventListener('click', e => {
+      const btn = e.target.closest('.cmp-btn');
+      if (!btn) return;
+      if (slot === 0) compareUser1 = btn.dataset.user;
+      else            compareUser2 = btn.dataset.user;
+      syncPickerActive();
+      loadCompare();
+    });
+  });
+  syncPickerActive();
+
+  document.getElementById('compare-mode-toggle').addEventListener('click', e => {
+    const btn = e.target.closest('.mode-btn');
+    if (!btn) return;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    compareMode = btn.dataset.mode;
+    loadCompare();
+  });
+}
+
+function syncPickerActive() {
+  document.querySelectorAll('#picker1 .cmp-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.user === compareUser1));
+  document.querySelectorAll('#picker2 .cmp-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.user === compareUser2));
+}
+
+async function loadCompare() {
+  const summaryEl = document.getElementById('compare-summary');
+  if (compareUser1 === compareUser2) {
+    summaryEl.innerHTML = '<p class="compare-warning">Selecciona dos usuarios distintos</p>';
+    if (chartCompare) { chartCompare.destroy(); chartCompare = null; }
+    return;
+  }
+  compareMode === 'category' ? await loadCompareCategory() : await loadCompareMonthly();
+}
+
+async function loadCompareCategory() {
+  try {
+    const res = await fetch(
+      `/api/compare/category?user1=${compareUser1}&user2=${compareUser2}&month=${currentMonth}`
+    );
+    if (res.status === 401) { location.href = '/login'; return; }
+    const data = await res.json();
+    if (data.error) return;
+
+    const meta1 = USER_META[data.user1] || { color: '#888', label: data.user1 };
+    const meta2 = USER_META[data.user2] || { color: '#aaa', label: data.user2 };
+    const total1 = data.categories.reduce((s, c) => s + c.user1_total, 0);
+    const total2 = data.categories.reduce((s, c) => s + c.user2_total, 0);
+    renderCompareSummary(meta1, data.user1, total1, meta2, data.user2, total2);
+
+    const wrap = document.getElementById('compare-chart-wrap');
+    const ctx  = document.getElementById('chart-compare').getContext('2d');
+    if (chartCompare) { chartCompare.destroy(); chartCompare = null; }
+
+    if (!data.categories.length) return;
+
+    wrap.style.height = Math.max(200, data.categories.length * 46) + 'px';
+
+    chartCompare = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.categories.map(c => {
+          const cat = CAT_MAP[c.category];
+          return cat ? `${cat.icon} ${cat.label}` : c.category;
+        }),
+        datasets: [
+          { label: meta1.label, data: data.categories.map(c => c.user1_total),
+            backgroundColor: meta1.color, borderRadius: 3 },
+          { label: meta2.label, data: data.categories.map(c => c.user2_total),
+            backgroundColor: meta2.color, borderRadius: 3 },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+          tooltip: { callbacks: { label: i => ` ${fmt(i.parsed.x)}` } },
+        },
+        scales: {
+          x: { beginAtZero: true, ticks: { callback: v => '€' + v, maxTicksLimit: 4 }, grid: { color: '#F3F4F6' } },
+          y: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        },
+      },
+    });
+  } catch (e) { console.error('Compare category:', e); }
+}
+
+async function loadCompareMonthly() {
+  try {
+    const res = await fetch(`/api/compare/monthly?user1=${compareUser1}&user2=${compareUser2}`);
+    if (res.status === 401) { location.href = '/login'; return; }
+    const data = await res.json();
+    if (data.error) return;
+
+    const meta1 = USER_META[data.user1] || { color: '#888', label: data.user1 };
+    const meta2 = USER_META[data.user2] || { color: '#aaa', label: data.user2 };
+    const total1 = data.months.reduce((s, m) => s + m.user1_total, 0);
+    const total2 = data.months.reduce((s, m) => s + m.user2_total, 0);
+    renderCompareSummary(meta1, data.user1, total1, meta2, data.user2, total2);
+
+    const wrap = document.getElementById('compare-chart-wrap');
+    const ctx  = document.getElementById('chart-compare').getContext('2d');
+    if (chartCompare) { chartCompare.destroy(); chartCompare = null; }
+
+    wrap.style.height = '220px';
+
+    chartCompare = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.months.map(m => fmtMonthShort(m.month)),
+        datasets: [
+          { label: meta1.label, data: data.months.map(m => m.user1_total),
+            backgroundColor: meta1.color, borderRadius: 3 },
+          { label: meta2.label, data: data.months.map(m => m.user2_total),
+            backgroundColor: meta2.color, borderRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+          tooltip: { callbacks: { label: i => ` ${fmt(i.parsed.y)}` } },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => '€' + v, maxTicksLimit: 5 }, grid: { color: '#F3F4F6' } },
+          x: { grid: { display: false } },
+        },
+      },
+    });
+  } catch (e) { console.error('Compare monthly:', e); }
+}
+
+function renderCompareSummary(meta1, user1, total1, meta2, user2, total2) {
+  document.getElementById('compare-summary').innerHTML = `
+    <div class="cmp-chip" style="--c:${meta1.color}">
+      ${meta1.icon} ${meta1.label}<br><strong>${fmt(total1)}</strong>
+    </div>
+    <div class="cmp-chip" style="--c:${meta2.color}">
+      ${meta2.icon} ${meta2.label}<br><strong>${fmt(total2)}</strong>
+    </div>`;
 }

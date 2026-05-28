@@ -102,6 +102,40 @@
     </div>
   </section>
 
+  <!-- TAB: Comparar -->
+  <section class="tab-panel" id="tab-compare">
+    <div class="card">
+      <!-- User pickers -->
+      <div class="cmp-pickers">
+        <div class="cmp-picker-row">
+          <div class="cmp-picker-lbl">Usuario 1</div>
+          <div class="cmp-picker" id="picker1"></div>
+        </div>
+        <div class="cmp-vs">vs.</div>
+        <div class="cmp-picker-row">
+          <div class="cmp-picker-lbl">Usuario 2</div>
+          <div class="cmp-picker" id="picker2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode toggle -->
+    <div class="mode-toggle" id="compare-mode-toggle">
+      <button class="mode-btn active" data-mode="category">Por categoría</button>
+      <button class="mode-btn" data-mode="monthly">Por mes</button>
+    </div>
+
+    <!-- Totals summary chips -->
+    <div class="compare-summary" id="compare-summary"></div>
+
+    <!-- Chart -->
+    <div class="card">
+      <div class="chart-wrap" id="compare-chart-wrap">
+        <canvas id="chart-compare"></canvas>
+      </div>
+    </div>
+  </section>
+
   <!-- TAB: Gráficas -->
   <section class="tab-panel" id="tab-charts">
     <div class="card">
@@ -151,11 +185,16 @@
     <span class="nav-icon">📈</span>
     <span class="nav-lbl">Gráficas</span>
   </button>
+  <button class="nav-item" data-tab="compare">
+    <span class="nav-icon">⚖️</span>
+    <span class="nav-lbl">Comparar</span>
+  </button>
 </nav>
 
 <!-- ── Toast ───────────────────────────────── -->
 <div id="toast" class="toast" role="alert" aria-live="polite"></div>
 
+<script>window.CURRENT_USER = "{{ username }}";</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="/static/app.js"></script>
 </body>

@@ -219,6 +219,93 @@ def summary():
     )
 
 
+@app.route("/api/compare/category")
+@login_required
+def compare_category():
+    user1 = request.args.get("user1", "")
+    user2 = request.args.get("user2", "")
+    month = request.args.get("month") or datetime.today().strftime("%Y-%m")
+    if user1 not in USERS or user2 not in USERS:
+        return jsonify({"error": "Usuario inválido"}), 400
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT category, username, SUM(amount)::float AS total
+                FROM expenses
+                WHERE username = ANY(%s)
+                  AND TO_CHAR(date, 'YYYY-MM') = %s
+                GROUP BY category, username
+                """,
+                ([user1, user2], month),
+            )
+            rows = cur.fetchall()
+
+    data: dict = {}
+    for row in rows:
+        cat = row["category"]
+        if cat not in data:
+            data[cat] = {user1: 0.0, user2: 0.0}
+        data[cat][row["username"]] = row["total"]
+
+    result = sorted(
+        [{"category": c, "user1_total": v[user1], "user2_total": v[user2]}
+         for c, v in data.items()],
+        key=lambda x: x["user1_total"] + x["user2_total"],
+        reverse=True,
+    )
+    return jsonify({"user1": user1, "user2": user2, "month": month, "categories": result})
+
+
+@app.route("/api/compare/monthly")
+@login_required
+def compare_monthly():
+    user1 = request.args.get("user1", "")
+    user2 = request.args.get("user2", "")
+    if user1 not in USERS or user2 not in USERS:
+        return jsonify({"error": "Usuario inválido"}), 400
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT TO_CHAR(date, 'YYYY-MM') AS month,
+                       username, SUM(amount)::float AS total
+                FROM expenses
+                WHERE username = ANY(%s)
+                  AND date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
+                GROUP BY month, username
+                ORDER BY month ASC
+                """,
+                ([user1, user2],),
+            )
+            rows = cur.fetchall()
+
+    # Build all 12 months
+    from datetime import date as _date
+    today = _date.today()
+    all_months = []
+    for i in range(11, -1, -1):
+        mo = today.month - i
+        yr = today.year
+        while mo <= 0:
+            mo += 12
+            yr -= 1
+        all_months.append(f"{yr}-{mo:02d}")
+
+    buckets = {m: {user1: 0.0, user2: 0.0} for m in all_months}
+    for row in rows:
+        if row["month"] in buckets:
+            buckets[row["month"]][row["username"]] = row["total"]
+
+    result = [
+        {"month": m, "user1_total": buckets[m][user1], "user2_total": buckets[m][user2]}
+        for m in all_months
+    ]
+    return jsonify({"user1": user1, "user2": user2, "months": result})
+
+
 @app.route("/api/charts/monthly")
 @login_required
 def charts_monthly():
