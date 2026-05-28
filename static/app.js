@@ -44,6 +44,7 @@ const installBtn  = document.getElementById('install-btn');
 /* ── Bootstrap ─────────────────────────────────────────── */
 inpDate.value = todayISO();
 buildCatGrid();
+buildEvolutionSelect();
 updateMonthLabel();
 loadAll();
 
@@ -57,6 +58,9 @@ function shiftMonth(delta) {
   currentMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   updateMonthLabel();
   loadAll();
+  if (document.getElementById('tab-charts').classList.contains('active')) {
+    loadPieChart();
+  }
 }
 
 function updateMonthLabel() {
@@ -74,8 +78,8 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + id).classList.add('active');
     btn.classList.add('active');
-    // Scroll the main area to top when switching tabs
     document.querySelector('.app-main').scrollTop = 0;
+    if (id === 'charts') loadCharts();
   });
 });
 
@@ -279,4 +283,177 @@ function showToast(msg) {
   toast.textContent = msg;
   toast.classList.add('show');
   _toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+}
+
+/* ── Charts ──────────────────────────────────────────────── */
+let chartMonthly = null, chartPie = null, chartLine = null;
+
+// Shared Chart.js defaults
+Chart.defaults.font.family = "'Segoe UI', system-ui, -apple-system, sans-serif";
+Chart.defaults.font.size   = 11;
+Chart.defaults.color       = '#6B7280';
+
+function buildEvolutionSelect() {
+  const sel = document.getElementById('evolution-cat');
+  sel.innerHTML = CATS.map(c =>
+    `<option value="${c.id}">${c.icon} ${c.label}</option>`
+  ).join('');
+  sel.addEventListener('change', loadLineChart);
+}
+
+async function loadCharts() {
+  await Promise.all([loadMonthlyChart(), loadPieChart(), loadLineChart()]);
+}
+
+async function loadMonthlyChart() {
+  try {
+    const res = await fetch('/api/charts/monthly');
+    if (res.status === 401) { location.href = '/login'; return; }
+    const data = await res.json();
+    const ctx  = document.getElementById('chart-monthly').getContext('2d');
+    if (chartMonthly) { chartMonthly.destroy(); chartMonthly = null; }
+    if (!data.length) return;
+
+    // Fill all 12 months, missing ones as 0
+    const allMonths = getLast12Months();
+    const map = Object.fromEntries(data.map(d => [d.month, d.total]));
+    const values = allMonths.map(m => map[m] || 0);
+
+    chartMonthly = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: allMonths.map(fmtMonthShort),
+        datasets: [{
+          data: values,
+          backgroundColor: allMonths.map(m =>
+            m === currentMonth ? '#7C3AED' : '#C4B5FD'
+          ),
+          borderRadius: 5,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: i => fmt(i.parsed.y) } },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => '€' + v, maxTicksLimit: 5 }, grid: { color: '#F3F4F6' } },
+          x: { grid: { display: false } },
+        },
+      },
+    });
+  } catch (e) { console.error('Monthly chart:', e); }
+}
+
+async function loadPieChart() {
+  try {
+    const res = await fetch(`/api/summary?month=${currentMonth}`);
+    if (res.status === 401) { location.href = '/login'; return; }
+    const data = await res.json();
+    document.getElementById('pie-month-label').textContent = monthLabel.textContent;
+    const ctx = document.getElementById('chart-pie').getContext('2d');
+    if (chartPie) { chartPie.destroy(); chartPie = null; }
+    if (!data.by_category.length) return;
+
+    const grandTotal = data.total;
+    chartPie = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: data.by_category.map(d => {
+          const c = CAT_MAP[d.category];
+          return c ? `${c.icon} ${c.label}` : d.category;
+        }),
+        datasets: [{
+          data: data.by_category.map(d => d.total),
+          backgroundColor: data.by_category.map(d => CAT_MAP[d.category]?.color || '#888'),
+          borderWidth: 2,
+          borderColor: '#fff',
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { padding: 10, boxWidth: 11, font: { size: 10 } },
+          },
+          tooltip: {
+            callbacks: {
+              label: i => {
+                const pct = ((i.parsed / grandTotal) * 100).toFixed(1);
+                return ` ${fmt(i.parsed)}  (${pct}%)`;
+              },
+            },
+          },
+        },
+      },
+    });
+  } catch (e) { console.error('Pie chart:', e); }
+}
+
+async function loadLineChart() {
+  try {
+    const cat  = document.getElementById('evolution-cat').value;
+    const meta = CAT_MAP[cat] || CATS[0];
+    const res  = await fetch(`/api/charts/evolution?category=${cat}`);
+    if (res.status === 401) { location.href = '/login'; return; }
+    const data = await res.json();
+    const ctx  = document.getElementById('chart-line').getContext('2d');
+    if (chartLine) { chartLine.destroy(); chartLine = null; }
+
+    const allMonths = getLast12Months();
+    const map    = Object.fromEntries(data.map(d => [d.month, d.total]));
+    const values = allMonths.map(m => map[m] || 0);
+
+    chartLine = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: allMonths.map(fmtMonthShort),
+        datasets: [{
+          data: values,
+          borderColor: meta.color,
+          backgroundColor: meta.color + '18',
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: meta.color,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: i => fmt(i.parsed.y) } },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => '€' + v, maxTicksLimit: 5 }, grid: { color: '#F3F4F6' } },
+          x: { grid: { display: false } },
+        },
+      },
+    });
+  } catch (e) { console.error('Line chart:', e); }
+}
+
+/* ── Chart helpers ───────────────────────────────────────── */
+function getLast12Months() {
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return months;
+}
+
+function fmtMonthShort(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const s = new Date(y, m - 1, 1).toLocaleDateString('es-ES', { month: 'short' });
+  return s.charAt(0).toUpperCase() + s.slice(1, 3);
 }

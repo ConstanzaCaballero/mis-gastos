@@ -321,6 +321,34 @@ input:focus { outline: none; border-color: var(--primary); }
 }
 .del-btn:hover { color: var(--danger); background: #fee2e2; }
 
+/* ── Charts ─────────────────────────────────────────────── */
+.chart-wrap {
+  position: relative;
+  height: 200px;
+}
+.chart-wrap--lg {
+  height: 300px;
+}
+.chart-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.cat-select {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  max-width: 54%;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+.cat-select:focus { outline: none; border-color: var(--primary); }
+
 /* ── Logout button (always visible in summary tab) ──────── */
 .logout-full-btn {
   display: block;

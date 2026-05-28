@@ -219,6 +219,52 @@ def summary():
     )
 
 
+@app.route("/api/charts/monthly")
+@login_required
+def charts_monthly():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT TO_CHAR(date, 'YYYY-MM') AS month,
+                       SUM(amount)::float AS total
+                FROM expenses
+                WHERE username = %s
+                  AND date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
+                GROUP BY month
+                ORDER BY month ASC
+                """,
+                (current_user(),),
+            )
+            rows = cur.fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/charts/evolution")
+@login_required
+def charts_evolution():
+    category = request.args.get("category", "")
+    if category not in CATEGORIES:
+        return jsonify({"error": "Categoría inválida"}), 400
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT TO_CHAR(date, 'YYYY-MM') AS month,
+                       SUM(amount)::float AS total
+                FROM expenses
+                WHERE username = %s
+                  AND category = %s
+                  AND date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
+                GROUP BY month
+                ORDER BY month ASC
+                """,
+                (current_user(), category),
+            )
+            rows = cur.fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5000))
