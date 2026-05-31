@@ -501,6 +501,18 @@ def _parse_message(text: str):
     return cat_id, amount, note
 
 
+def _categories_menu(username: str = "") -> str:
+    lines = [f"👋 Hola {username}!" if username else "📋 Categorías disponibles:", ""]
+    for cat_id, label in _CAT_DISPLAY.items():
+        lines.append(label)
+    lines += [
+        "",
+        "Envía: *Categoría Importe* (nota opcional)",
+        "Ej: _Supermercado 45_ o _Gym 30 proteínas_",
+    ]
+    return "\n".join(lines)
+
+
 def _twiml_reply(message: str):
     resp = MessagingResponse()
     resp.message(message)
@@ -529,15 +541,19 @@ def whatsapp_webhook():
             "Pide al administrador que añada tu número a la app."
         )
 
+    # Help / menu command
+    _HELP_TRIGGERS = {"hola", "ayuda", "help", "menu", "menú", "?", "categorias", "categorías"}
+    if body.lower().strip() in _HELP_TRIGGERS:
+        return _twiml_reply(_categories_menu(username))
+
     # Parse the message
     cat_id, amount, note = _parse_message(body)
     if not cat_id:
-        cats = "supermercado · restaurantes · alquiler · transporte · viajes · ropa · salud · gym · ocio · claude · temu · otros …"
         return _twiml_reply(
             "❌ No entendí el mensaje.\n\n"
-            "Formato: *Categoría Importe* (y nota opcional)\n"
+            "Formato: *Categoría Importe*\n"
             "Ej: _Supermercado 45_ o _Gym 30 proteínas_\n\n"
-            f"Categorías: {cats}"
+            + _categories_menu(username)
         )
 
     today = datetime.today().strftime("%Y-%m-%d")
