@@ -541,10 +541,69 @@ def whatsapp_webhook():
             "Pide al administrador que añada tu número a la app."
         )
 
+    cmd = body.lower().strip()
+
     # Help / menu command
     _HELP_TRIGGERS = {"hola", "ayuda", "help", "menu", "menú", "?", "categorias", "categorías"}
-    if body.lower().strip() in _HELP_TRIGGERS:
+    if cmd in _HELP_TRIGGERS:
         return _twiml_reply(_categories_menu(username))
+
+    # Delete last expense
+    if cmd in {"borrar último", "borrar ultimo", "borrar", "deshacer", "undo"}:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, amount::float, category, note,
+                           TO_CHAR(date, 'DD/MM/YYYY') AS date
+                    FROM expenses
+                    WHERE username = %s
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (username,),
+                )
+                last = cur.fetchone()
+                if not last:
+                    return _twiml_reply("ℹ️ No tienes gastos registrados.")
+                cur.execute("DELETE FROM expenses WHERE id = %s AND username = %s",
+                            (last["id"], username))
+        label = _CAT_DISPLAY.get(last["category"], last["category"])
+        note_line = f"\n📝 {last['note']}" if last["note"] else ""
+        return _twiml_reply(
+            f"🗑️ Último gasto eliminado:\n"
+            f"{label}\n"
+            f"💶 {last['amount']:.2f} €{note_line}\n"
+            f"📅 {last['date']}"
+        )
+
+    # Today's total
+    if cmd in {"total", "total hoy", "hoy", "resumen"}:
+        today_str = datetime.today().strftime("%Y-%m-%d")
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT category, SUM(amount)::float AS total
+                    FROM expenses
+                    WHERE username = %s AND date = %s
+                    GROUP BY category
+                    ORDER BY total DESC
+                    """,
+                    (username, today_str),
+                )
+                rows = cur.fetchall()
+        if not rows:
+            return _twiml_reply(
+                f"ℹ️ {username}, no tienes gastos registrados hoy."
+            )
+        grand = sum(r["total"] for r in rows)
+        lines = [f"📊 Total de hoy — {datetime.today().strftime('%d/%m/%Y')}", ""]
+        for r in rows:
+            label = _CAT_DISPLAY.get(r["category"], r["category"])
+            lines.append(f"{label}  {r['total']:.2f} €")
+        lines += ["", f"💶 *Total: {grand:.2f} €*"]
+        return _twiml_reply("\n".join(lines))
 
     # Parse the message
     cat_id, amount, note = _parse_message(body)
