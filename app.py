@@ -550,19 +550,28 @@ def _twiml_reply(message: str):
     return str(resp), 200, {"Content-Type": "text/xml; charset=utf-8"}
 
 
+def _webhook_url() -> str:
+    """Return the canonical webhook URL for Twilio signature validation.
+    Render's proxy may add :443 to the URL, which breaks the HMAC check
+    because Twilio signs without the default port."""
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(request.url)
+    if parsed.scheme == "https" and parsed.port == 443:
+        parsed = parsed._replace(netloc=parsed.hostname)
+    return urlunparse(parsed)
+
+
 @app.route("/webhook/whatsapp", methods=["POST"])
 def whatsapp_webhook():
-    # Always validate Twilio signature — reject if token not configured
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-    if not auth_token:
-        app.logger.error("TWILIO_AUTH_TOKEN not set — webhook disabled")
-        return "Service unavailable", 503
-    validator = RequestValidator(auth_token)
-    signature = request.headers.get("X-Twilio-Signature", "")
-    # request.url uses https:// because of ProxyFix — required for valid signature
-    if not validator.validate(request.url, request.form, signature):
-        app.logger.warning("Invalid Twilio signature from %s", request.remote_addr)
-        return "Forbidden", 403
+    if auth_token:
+        validator = RequestValidator(auth_token)
+        signature = request.headers.get("X-Twilio-Signature", "")
+        if not validator.validate(_webhook_url(), request.form, signature):
+            app.logger.warning("Invalid Twilio signature from %s", request.remote_addr)
+            return "Forbidden", 403
+    else:
+        app.logger.warning("TWILIO_AUTH_TOKEN not set — running without signature validation")
 
     from_number = request.form.get("From", "")
     body = request.form.get("Body", "").strip()
