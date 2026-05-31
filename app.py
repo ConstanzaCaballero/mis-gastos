@@ -4,12 +4,15 @@ import secrets
 from contextlib import contextmanager
 from datetime import datetime
 
+import bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import (
     Flask, jsonify, redirect, render_template,
     request, session, url_for,
 )
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from twilio.request_validator import RequestValidator
 from twilio.twiml.messaging_response import MessagingResponse
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -17,6 +20,13 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # fix https:// behind Render proxy
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri="memory://",
+    default_limits=[],
+)
 
 _DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if _DATABASE_URL.startswith("postgres://"):
@@ -53,15 +63,36 @@ def login_required(f):
     return decorated
 
 
+# ── Auth helpers ─────────────────────────────────────────────
+def _check_password(plain: str, stored: str) -> bool:
+    """Verify password against a bcrypt hash ($2b$…) or plaintext fallback."""
+    if not stored:
+        return False
+    if stored.startswith(("$2b$", "$2a$", "$2y$")):
+        return bcrypt.checkpw(plain.encode(), stored.encode())
+    # Plaintext fallback — use constant-time compare to prevent timing attacks
+    return secrets.compare_digest(plain, stored)
+
+
+@app.errorhandler(429)
+def too_many_requests(_e):
+    if request.path == "/login":
+        return render_template(
+            "login.html",
+            error="Demasiados intentos. Espera un minuto e inténtalo de nuevo.",
+        ), 429
+    return jsonify({"error": "Demasiadas peticiones. Inténtalo más tarde."}), 429
+
+
 # ── Auth routes ──────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute; 20 per hour", methods=["POST"])
 def login():
     error = None
     if request.method == "POST":
         username = request.form.get("username", "")
         password = request.form.get("password", "")
-        stored   = USERS.get(username, "")
-        if stored and secrets.compare_digest(password, stored):
+        if _check_password(password, USERS.get(username, "")):
             session["username"] = username
             return redirect(url_for("index"))
         error = "Usuario o contraseña incorrectos"
@@ -521,14 +552,17 @@ def _twiml_reply(message: str):
 
 @app.route("/webhook/whatsapp", methods=["POST"])
 def whatsapp_webhook():
-    # Validate Twilio signature if auth token is configured
+    # Always validate Twilio signature — reject if token not configured
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-    if auth_token:
-        validator = RequestValidator(auth_token)
-        signature = request.headers.get("X-Twilio-Signature", "")
-        # request.url already uses https:// thanks to ProxyFix
-        if not validator.validate(request.url, request.form, signature):
-            return "Forbidden", 403
+    if not auth_token:
+        app.logger.error("TWILIO_AUTH_TOKEN not set — webhook disabled")
+        return "Service unavailable", 503
+    validator = RequestValidator(auth_token)
+    signature = request.headers.get("X-Twilio-Signature", "")
+    # request.url uses https:// because of ProxyFix — required for valid signature
+    if not validator.validate(request.url, request.form, signature):
+        app.logger.warning("Invalid Twilio signature from %s", request.remote_addr)
+        return "Forbidden", 403
 
     from_number = request.form.get("From", "")
     body = request.form.get("Body", "").strip()
