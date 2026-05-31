@@ -10,8 +10,12 @@ from flask import (
     Flask, jsonify, redirect, render_template,
     request, session, url_for,
 )
+from twilio.request_validator import RequestValidator
+from twilio.twiml.messaging_response import MessagingResponse
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # fix https:// behind Render proxy
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 _DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -350,6 +354,212 @@ def charts_evolution():
             )
             rows = cur.fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+# ── WhatsApp webhook ─────────────────────────────────────────
+
+# Friendly display labels for confirmation messages
+_CAT_DISPLAY = {
+    "supermercado":   "🛒 Supermercado",
+    "restaurantes":   "🍔 Restaurantes",
+    "alquiler":       "🏠 Alquiler",
+    "transporte":     "🚇 Transporte",
+    "viajes":         "✈️ Viajes",
+    "ropa_compras":   "🛍️ Ropa/Compras",
+    "salud_gym":      "💪 Salud/Gym",
+    "fertilidad":     "🧬 Fertilidad",
+    "envios":         "📦 Envíos",
+    "ocio":           "🎮 Ocio",
+    "suscripciones":  "📺 Suscripciones",
+    "claude":         "🤖 Claude",
+    "adopta_abuelo":  "👴 Adopta un abuelo",
+    "comunidad_stro": "🏘️ Comunidad Stro",
+    "temu":           "🛍️ TEMU",
+    "otros":          "🗂️ Otros",
+}
+
+# Aliases → canonical category id (lowercase keys)
+_CAT_ALIASES: dict[str, str] = {
+    # supermercado
+    "supermercado": "supermercado", "super": "supermercado",
+    "mercadona": "supermercado", "lidl": "supermercado",
+    "carrefour": "supermercado", "dia": "supermercado",
+    "compra": "supermercado", "compras alimentacion": "supermercado",
+    # restaurantes
+    "restaurantes": "restaurantes", "restaurante": "restaurantes",
+    "comida": "restaurantes", "cena": "restaurantes",
+    "almuerzo": "restaurantes", "desayuno": "restaurantes",
+    "cafe": "restaurantes", "café": "restaurantes",
+    "bar": "restaurantes", "pizza": "restaurantes",
+    "burger": "restaurantes", "hamburguesa": "restaurantes",
+    "kebab": "restaurantes", "sushi": "restaurantes",
+    # alquiler
+    "alquiler": "alquiler", "renta": "alquiler", "piso": "alquiler",
+    # transporte
+    "transporte": "transporte", "metro": "transporte",
+    "bus": "transporte", "tren": "transporte", "renfe": "transporte",
+    "taxi": "transporte", "uber": "transporte", "cabify": "transporte",
+    "bici": "transporte", "patinete": "transporte", "gasolina": "transporte",
+    # viajes
+    "viajes": "viajes", "viaje": "viajes", "vuelo": "viajes",
+    "hotel": "viajes", "airbnb": "viajes", "alojamiento": "viajes",
+    "vacaciones": "viajes",
+    # ropa_compras
+    "ropa": "ropa_compras", "ropa/compras": "ropa_compras",
+    "compras": "ropa_compras", "ropa compras": "ropa_compras",
+    "zara": "ropa_compras", "mango": "ropa_compras",
+    "hm": "ropa_compras", "h&m": "ropa_compras",
+    "shein": "ropa_compras", "zapatos": "ropa_compras",
+    # salud_gym
+    "salud": "salud_gym", "gym": "salud_gym", "gimnasio": "salud_gym",
+    "salud/gym": "salud_gym", "salud gym": "salud_gym",
+    "medico": "salud_gym", "médico": "salud_gym",
+    "farmacia": "salud_gym", "dentista": "salud_gym",
+    "suplementos": "salud_gym", "proteinas": "salud_gym",
+    "proteínas": "salud_gym", "vitaminas": "salud_gym",
+    "fisio": "salud_gym", "fisioterapia": "salud_gym",
+    # fertilidad
+    "fertilidad": "fertilidad", "clinica": "fertilidad",
+    "clínica": "fertilidad", "fiv": "fertilidad",
+    # envios
+    "envios": "envios", "envíos": "envios",
+    "envio": "envios", "envío": "envios",
+    "paquete": "envios", "correos": "envios", "seur": "envios",
+    "mrw": "envios", "mensajeria": "envios", "mensajería": "envios",
+    # ocio
+    "ocio": "ocio", "cine": "ocio", "teatro": "ocio",
+    "concierto": "ocio", "juego": "ocio", "juegos": "ocio",
+    "salida": "ocio", "copa": "ocio", "copas": "ocio",
+    "discoteca": "ocio", "fiesta": "ocio",
+    # suscripciones
+    "suscripciones": "suscripciones", "suscripcion": "suscripciones",
+    "suscripción": "suscripciones", "netflix": "suscripciones",
+    "spotify": "suscripciones", "amazon": "suscripciones",
+    "hbo": "suscripciones", "youtube": "suscripciones",
+    "apple": "suscripciones", "microsoft": "suscripciones",
+    # claude
+    "claude": "claude", "anthropic": "claude", "ia": "claude",
+    # adopta_abuelo
+    "adopta_abuelo": "adopta_abuelo", "adopta abuelo": "adopta_abuelo",
+    "abuelo": "adopta_abuelo", "adopta": "adopta_abuelo",
+    # comunidad_stro
+    "comunidad_stro": "comunidad_stro", "comunidad stro": "comunidad_stro",
+    "stro": "comunidad_stro", "comunidad": "comunidad_stro",
+    # temu
+    "temu": "temu",
+    # otros
+    "otros": "otros", "otro": "otros", "other": "otros",
+    "misc": "otros", "varios": "otros",
+}
+
+
+def _phone_to_user(raw_from: str) -> str | None:
+    """Map 'whatsapp:+34...' to a username via env vars."""
+    phone = raw_from.replace("whatsapp:", "").strip()
+    mapping = {
+        os.environ.get("WHATSAPP_ADMIN", ""):     "admin",
+        os.environ.get("WHATSAPP_MAXIMO", ""):    "Maximo",
+        os.environ.get("WHATSAPP_GUILLERMO", ""): "Guillermo",
+    }
+    return mapping.get(phone)  # returns None if phone not registered
+
+
+def _parse_message(text: str):
+    """
+    Parse 'Category Amount [Note]' → (cat_id, amount, note).
+    Amount can use comma or dot as decimal separator.
+    The rightmost numeric token is taken as the amount; everything
+    before it is the category, everything after it is the note.
+    Returns (None, None, None) if parsing fails.
+    """
+    tokens = text.strip().split()
+    if len(tokens) < 2:
+        return None, None, None
+
+    # Find rightmost token parseable as a positive number
+    amount_idx = None
+    amount = None
+    for i in range(len(tokens) - 1, 0, -1):  # stop at 1: need at least one category token
+        try:
+            val = float(tokens[i].replace(",", "."))
+            if val > 0:
+                amount, amount_idx = val, i
+                break
+        except ValueError:
+            continue
+
+    if amount_idx is None:
+        return None, None, None
+
+    cat_text = " ".join(tokens[:amount_idx]).lower().strip()
+    note = " ".join(tokens[amount_idx + 1:]).strip() or None
+
+    cat_id = _CAT_ALIASES.get(cat_text)
+    if not cat_id:
+        cat_id = _CAT_ALIASES.get(tokens[0].lower())  # fallback: first word only
+
+    return cat_id, amount, note
+
+
+def _twiml_reply(message: str):
+    resp = MessagingResponse()
+    resp.message(message)
+    return str(resp), 200, {"Content-Type": "text/xml; charset=utf-8"}
+
+
+@app.route("/webhook/whatsapp", methods=["POST"])
+def whatsapp_webhook():
+    # Validate Twilio signature if auth token is configured
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    if auth_token:
+        validator = RequestValidator(auth_token)
+        signature = request.headers.get("X-Twilio-Signature", "")
+        # request.url already uses https:// thanks to ProxyFix
+        if not validator.validate(request.url, request.form, signature):
+            return "Forbidden", 403
+
+    from_number = request.form.get("From", "")
+    body = request.form.get("Body", "").strip()
+
+    # Identify user by phone number
+    username = _phone_to_user(from_number)
+    if not username:
+        return _twiml_reply(
+            "❌ Número no registrado.\n"
+            "Pide al administrador que añada tu número a la app."
+        )
+
+    # Parse the message
+    cat_id, amount, note = _parse_message(body)
+    if not cat_id:
+        cats = "supermercado · restaurantes · alquiler · transporte · viajes · ropa · salud · gym · ocio · claude · temu · otros …"
+        return _twiml_reply(
+            "❌ No entendí el mensaje.\n\n"
+            "Formato: *Categoría Importe* (y nota opcional)\n"
+            "Ej: _Supermercado 45_ o _Gym 30 proteínas_\n\n"
+            f"Categorías: {cats}"
+        )
+
+    today = datetime.today().strftime("%Y-%m-%d")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO expenses (username, amount, category, note, date)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (username, amount, cat_id, note, today),
+            )
+
+    label = _CAT_DISPLAY.get(cat_id, cat_id)
+    note_line = f"\n📝 {note}" if note else ""
+    day = datetime.today().strftime("%d/%m/%Y")
+    return _twiml_reply(
+        f"✅ Guardado, {username}!\n"
+        f"{label}\n"
+        f"💶 {amount:.2f} €{note_line}\n"
+        f"📅 {day}"
+    )
 
 
 if __name__ == "__main__":

@@ -17,3 +17,13 @@ services:
         sync: false   # Password for user "Maximo"
       - key: PASSWORD_GUILLERMO
         sync: false   # Password for user "Guillermo"
+      - key: TWILIO_ACCOUNT_SID
+        sync: false   # Twilio Account SID
+      - key: TWILIO_AUTH_TOKEN
+        sync: false   # Twilio Auth Token (used to validate webhook signatures)
+      - key: WHATSAPP_ADMIN
+        sync: false   # WhatsApp phone for admin, e.g. +34612345678
+      - key: WHATSAPP_MAXIMO
+        sync: false   # WhatsApp phone for Maximo
+      - key: WHATSAPP_GUILLERMO
+        sync: false   # WhatsApp phone for Guillermo
